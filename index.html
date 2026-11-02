@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AI Debate Coach</title>
+<style>
+  :root {
+    --bg:#f6f7fb; --card:#fff; --ink:#1b1f2a; --muted:#667085; --line:#e4e7ee;
+    --accent:#4f46e5; --accent-ink:#fff; --for:#0e9f6e; --against:#e0483e; --opp:#eef0f6; --me:#e8e7fd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#0f1117; --card:#181b24; --ink:#eceef5; --muted:#9aa1b2; --line:#2a2f3c;
+            --accent:#818cf8; --accent-ink:#0f1117; --opp:#232736; --me:#2b2a5c; }
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.55 system-ui,-apple-system,Segoe UI,sans-serif; }
+  main { max-width:760px; margin:0 auto; padding:24px 16px 80px; }
+  h1 { font-size:1.6rem; margin:0 0 4px; }
+  h2 { font-size:1.15rem; margin:0 0 8px; }
+  .sub { color:var(--muted); margin:0 0 24px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:20px; margin-bottom:16px; }
+  label.lbl { display:block; font-weight:600; margin:16px 0 8px; }
+  input[type=text], textarea { width:100%; padding:12px; border:1px solid var(--line); border-radius:10px;
+    background:var(--bg); color:var(--ink); font:inherit; }
+  textarea { resize:vertical; min-height:96px; }
+  .chips { display:flex; flex-wrap:wrap; gap:8px; }
+  .chip, .seg button { border:1px solid var(--line); background:var(--card); color:var(--ink); padding:8px 12px;
+    border-radius:999px; cursor:pointer; font:inherit; font-size:.9rem; }
+  .chip:hover { border-color:var(--accent); }
+  .seg { display:flex; gap:8px; flex-wrap:wrap; }
+  .seg button[aria-pressed=true] { background:var(--accent); color:var(--accent-ink); border-color:var(--accent); }
+  .btn { background:var(--accent); color:var(--accent-ink); border:0; padding:12px 20px; border-radius:10px;
+    font:inherit; font-weight:600; cursor:pointer; }
+  .btn.ghost { background:transparent; color:var(--ink); border:1px solid var(--line); }
+  .btn:disabled { opacity:.5; cursor:not-allowed; }
+  .row { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .spread { justify-content:space-between; }
+  .badge { font-size:.8rem; font-weight:700; padding:2px 10px; border-radius:999px; color:#fff; }
+  .badge.for { background:var(--for); } .badge.against { background:var(--against); }
+  .log { display:flex; flex-direction:column; gap:12px; margin:16px 0; }
+  .msg { padding:12px 14px; border-radius:12px; white-space:pre-wrap; max-width:92%; }
+  .msg.opp { background:var(--opp); align-self:flex-start; }
+  .msg.me { background:var(--me); align-self:flex-end; }
+  .msg small { display:block; color:var(--muted); font-weight:600; margin-bottom:2px; }
+  .hidden { display:none; }
+  .err { color:var(--against); margin-top:8px; }
+  .score-big { font-size:3.2rem; font-weight:800; line-height:1; color:var(--accent); }
+  .bar { height:8px; background:var(--line); border-radius:99px; overflow:hidden; margin:6px 0 8px; }
+  .bar > i { display:block; height:100%; background:var(--accent); border-radius:99px; }
+  ul { padding-left:20px; margin:6px 0; }
+  .cat .top { display:flex; justify-content:space-between; font-weight:600; text-transform:capitalize; }
+  .tag { font-size:.75rem; background:var(--opp); padding:2px 8px; border-radius:999px; text-transform:capitalize; color:var(--muted); }
+</style>
+</head>
+<body>
+<main>
+  <h1>AI Debate Coach</h1>
+  <p class="sub">Practice against an AI opponent, then get scored feedback and exercises tailored to your weak spots.</p>
+
+  <!-- SETUP -->
+  <section id="setup" class="card">
+    <label class="lbl" for="topic" style="margin-top:0">Debate motion</label>
+    <input id="topic" type="text" maxlength="300" placeholder="e.g. Schools should ban smartphones">
+    <div class="chips" id="topics" style="margin-top:10px"></div>
+
+    <label class="lbl">Your side</label>
+    <div class="seg" id="sideSeg">
+      <button data-v="for" aria-pressed="true">For</button>
+      <button data-v="against" aria-pressed="false">Against</button>
+    </div>
+
+    <label class="lbl">Opponent difficulty</label>
+    <div class="seg" id="diffSeg">
+      <button data-v="friendly" aria-pressed="false">Friendly</button>
+      <button data-v="standard" aria-pressed="true">Standard</button>
+      <button data-v="ruthless" aria-pressed="false">Ruthless</button>
+    </div>
+
+    <div style="margin-top:24px"><button class="btn" id="startBtn">Start debate</button></div>
+    <div id="setupErr" class="err"></div>
+  </section>
+
+  <section id="historyCard" class="card hidden">
+    <div class="row spread"><h2 style="margin:0">Past debates</h2>
+      <button class="btn ghost" id="clearHist">Clear</button></div>
+    <div id="history"></div>
+  </section>
+
+  <!-- DEBATE -->
+  <section id="debate" class="hidden">
+    <div class="card">
+      <div class="row spread">
+        <div><h2 id="motion" style="margin:0"></h2><span id="sideBadge" class="badge"></span>
+          <span class="tag" id="turnCount"></span></div>
+        <button class="btn ghost" id="quitBtn">Abandon</button>
+      </div>
+      <p class="sub" style="margin:8px 0 0">Open with your argument. Aim for 3&ndash;5 exchanges, then finish for your score.</p>
+      <div class="log" id="log"></div>
+      <textarea id="input" placeholder="Make your argument... (Ctrl+Enter to send)"></textarea>
+      <div class="row" style="margin-top:12px">
+        <button class="btn" id="sendBtn">Send</button>
+        <button class="btn ghost" id="finishBtn" disabled>Finish &amp; get feedback</button>
+      </div>
+      <div id="debateErr" class="err"></div>
+    </div>
+  </section>
+
+  <!-- RESULTS -->
+  <section id="results" class="hidden"></section>
+</main>
+
+<script>
+const TOPICS = [
+  "Schools should ban smartphones",
+  "Social media does more harm than good",
+  "Homework should be abolished",
+  "Voting should be compulsory",
+  "AI-generated art is real art",
+  "University education should be free",
+  "Zoos should be phased out",
+  "The school week should be four days",
+];
+const $ = id => document.getElementById(id);
+const state = { side: "for", difficulty: "standard", turns: [], busy: false };
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c]));
+}
+function show(id) {
+  for (const s of ["setup","debate","results"]) $(s).classList.toggle("hidden", s !== id);
+  if (id === "setup") renderHistory(); else $("historyCard").classList.add("hidden");
+}
+
+// ---- Saved history (browser localStorage; every access guarded in case storage is blocked) ----
+const HKEY = "debateCoachHistory";
+function loadHistory() {
+  try { return JSON.parse(localStorage.getItem(HKEY)) || []; } catch { return []; }
+}
+function saveHistory(list) {
+  try { localStorage.setItem(HKEY, JSON.stringify(list.slice(0, 50))); } catch {}
+}
+function renderHistory() {
+  const list = loadHistory();
+  $("historyCard").classList.toggle("hidden", !list.length);
+  $("history").innerHTML = list.map((h, i) => `
+    <div class="row spread" style="padding:10px 0;border-top:1px solid var(--line)">
+      <div><strong>${escapeHtml(h.topic)}</strong><br>
+        <span class="tag">${h.side}</span> <span class="tag">${escapeHtml(new Date(h.date).toLocaleDateString())}</span></div>
+      <div class="row"><strong style="color:var(--accent);font-size:1.2rem">${h.analysis.overall_score}</strong>
+        <button class="btn ghost" data-i="${i}">View</button></div>
+    </div>`).join("");
+}
+$("history").addEventListener("click", e => {
+  const b = e.target.closest("button[data-i]"); if (!b) return;
+  const h = loadHistory()[+b.dataset.i]; if (!h) return;
+  state.topic = h.topic; renderResults(h.analysis, true);
+});
+$("clearHist").onclick = () => { if (confirm("Delete all saved debates?")) { saveHistory([]); renderHistory(); } };
+
+function segment(id, key) {
+  $(id).addEventListener("click", e => {
+    const b = e.target.closest("button"); if (!b) return;
+    state[key] = b.dataset.v;
+    for (const x of $(id).children) x.setAttribute("aria-pressed", x === b);
+  });
+}
+segment("sideSeg", "side"); segment("diffSeg", "difficulty");
+
+for (const t of TOPICS) {
+  const c = document.createElement("button");
+  c.className = "chip"; c.textContent = t;
+  c.onclick = () => { $("topic").value = t; };
+  $("topics").appendChild(c);
+}
+
+function addMsg(role, text) {
+  const d = document.createElement("div");
+  d.className = "msg " + (role === "student" ? "me" : "opp");
+  d.innerHTML = `<small>${role === "student" ? "You" : "Opponent"}</small><span></span>`;
+  d.lastChild.textContent = text;
+  $("log").appendChild(d); d.scrollIntoView({ block: "end", behavior: "smooth" });
+  return d.lastChild;
+}
+function refreshControls() {
+  const students = state.turns.filter(t => t.role === "student").length;
+  $("turnCount").textContent = `Round ${students}`;
+  $("sendBtn").disabled = state.busy;
+  $("finishBtn").disabled = state.busy || students < 2;
+}
+
+$("startBtn").onclick = () => {
+  const topic = $("topic").value.trim();
+  if (topic.length < 3) { $("setupErr").textContent = "Pick or write a motion first."; return; }
+  $("setupErr").textContent = "";
+  Object.assign(state, { topic, turns: [], busy: false });
+  $("motion").textContent = topic;
+  $("sideBadge").textContent = "You: " + state.side.toUpperCase();
+  $("sideBadge").className = "badge " + state.side;
+  $("log").innerHTML = ""; $("input").value = ""; $("debateErr").textContent = "";
+  refreshControls(); show("debate"); $("input").focus();
+};
+$("quitBtn").onclick = () => { if (!state.turns.length || confirm("Abandon this debate?")) show("setup"); };
+
+async function send() {
+  const text = $("input").value.trim();
+  if (!text || state.busy) return;
+  $("debateErr").textContent = "";
+  state.busy = true;
+  state.turns.push({ role: "student", text });
+  addMsg("student", text); $("input").value = ""; refreshControls();
+
+  const out = addMsg("opponent", "...");
+  try {
+    const res = await fetch("/api/debate", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: state.topic, student_side: state.side,
+                             difficulty: state.difficulty, turns: state.turns }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
+    const reader = res.body.getReader(), dec = new TextDecoder();
+    let full = "";
+    for (;;) {
+      const { done, value } = await reader.read(); if (done) break;
+      full += dec.decode(value, { stream: true });
+      out.textContent = full;
+      out.scrollIntoView({ block: "end" });
+    }
+    state.turns.push({ role: "opponent", text: full.trim() });
+  } catch (e) {
+    out.parentElement.remove();
+    state.turns.pop(); // drop the unanswered student turn so they can resend
+    $("input").value = text;
+    $("log").lastChild?.remove();
+    $("debateErr").textContent = "Could not reach the opponent: " + e.message;
+  }
+  state.busy = false; refreshControls(); $("input").focus();
+}
+$("sendBtn").onclick = send;
+$("input").addEventListener("keydown", e => { if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) send(); });
+
+$("finishBtn").onclick = async () => {
+  // A trailing student turn with no reply cannot occur here (send is blocked while busy).
+  $("finishBtn").disabled = true; $("sendBtn").disabled = true;
+  $("debateErr").textContent = "";
+  $("finishBtn").textContent = "Analyzing your debate...";
+  try {
+    const res = await fetch("/api/analyze", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ topic: state.topic, student_side: state.side, turns: state.turns }),
+    });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || res.statusText);
+    const analysis = await res.json();
+    saveHistory([{ topic: state.topic, side: state.side, date: Date.now(), analysis }, ...loadHistory()]);
+    renderResults(analysis);
+  } catch (e) {
+    $("debateErr").textContent = "Analysis failed: " + e.message;
+  }
+  $("finishBtn").textContent = "Finish & get feedback"; refreshControls();
+};
+
+const CATS = ["logic","evidence","rebuttals","confidence","persuasiveness"];
+function renderResults(a, fromHistory = false) {
+  const li = arr => arr.map(x => `<li>${escapeHtml(x)}</li>`).join("");
+  $("results").innerHTML = `
+    <div class="card">
+      <div class="row" style="gap:20px">
+        <div class="score-big">${a.overall_score}<span style="font-size:1.1rem;color:var(--muted)">/100</span></div>
+        <div style="flex:1;min-width:200px"><h2>${escapeHtml(state.topic)}</h2><div>${escapeHtml(a.verdict)}</div></div>
+      </div>
+    </div>
+    <div class="card">
+      <h2>Skill breakdown</h2>
+      ${CATS.map(c => `<div class="cat" style="margin-top:14px">
+        <div class="top"><span>${c}</span><span>${a[c].score}</span></div>
+        <div class="bar"><i style="width:${Math.max(0, Math.min(100, a[c].score))}%"></i></div>
+        <div>${escapeHtml(a[c].feedback)}</div></div>`).join("")}
+    </div>
+    <div class="card"><h2>Strengths</h2><ul>${li(a.strengths)}</ul>
+      <h2 style="margin-top:16px">To improve</h2><ul>${li(a.weaknesses)}</ul></div>
+    <div class="card"><h2>Best moment</h2><p>${escapeHtml(a.best_moment)}</p>
+      <h2>Biggest missed opportunity</h2><p>${escapeHtml(a.biggest_missed_opportunity)}</p></div>
+    <div class="card"><h2>Your practice plan</h2>
+      ${a.exercises.map((x, i) => `<div style="margin-top:14px"><strong>${i + 1}. ${escapeHtml(x.title)}</strong>
+        <span class="tag">${escapeHtml(x.targets)}</span><div>${escapeHtml(x.instructions)}</div></div>`).join("")}
+    </div>
+    <div class="row"><button class="btn" id="againBtn">${fromHistory ? "Back" : "New debate"}</button></div>`;
+  $("againBtn").onclick = () => show("setup");
+  show("results"); window.scrollTo({ top: 0 });
+}
+renderHistory();
+</script>
+</body>
+</html>
